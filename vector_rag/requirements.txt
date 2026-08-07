@@ -1,0 +1,12 @@
+# vector_rag module dependencies (Module 3)
+faiss-cpu
+sentence-transformers
+langchain
+pandas
+numpy
+pyarrow
+python-dotenv
+pydantic
+
+# testing
+pytest

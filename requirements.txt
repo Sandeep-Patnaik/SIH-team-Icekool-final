@@ -1,0 +1,9 @@
+﻿langchain
+sqlalchemy
+psycopg2-binary
+pandas
+numpy
+faiss-cpu
+sentence-transformers
+pytest
+python-dotenv
