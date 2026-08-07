@@ -1,9 +1,52 @@
-﻿langchain
-sqlalchemy
-psycopg2-binary
-pandas
+﻿# ==========================
+# Core
+# ==========================
+python-dotenv>=1.0.0
+pydantic>=2.0
+
+# ==========================
+# Database
+# ==========================
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+alembic>=1.13
+
+# ==========================
+# Data Processing
+# ==========================
 numpy
-faiss-cpu
+pandas
+pyarrow
+xarray
+netCDF4
+
+# ==========================
+# AI / Vector RAG
+# ==========================
 sentence-transformers
-pytest
-python-dotenv
+faiss-cpu
+langchain
+
+# ==========================
+# LLM Providers
+# ==========================
+openai
+anthropic
+google-generativeai
+requests
+
+# ==========================
+# Visualization & Reports
+# ==========================
+matplotlib
+reportlab
+
+# ==========================
+# Testing
+# ==========================
+pytest>=8.0
+
+# ==========================
+# Optional (already used by pytest)
+# ==========================
+anyio

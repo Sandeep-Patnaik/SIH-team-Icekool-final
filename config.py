@@ -24,6 +24,7 @@ class Config:
     RAW_NETCDF_DIR: Path = BASE_DIR / "data" / "raw_netcdf"
     PROCESSED_DATA_DIR: Path = BASE_DIR / "data" / "processed"
     FAISS_INDEX_PATH: Path = BASE_DIR / "data" / "faiss_index"
+    REPORTS_DIR: Path = BASE_DIR / "reports"
     LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "openai")  # openai | qwen | llama
     LLM_API_KEY: str = os.environ.get("LLM_API_KEY", "")
     EMBEDDING_MODEL: str = os.environ.get(

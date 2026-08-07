@@ -1,5 +1,5 @@
 import pytest
-from sql_guard import validate_sql, UnsafeSQLError
+from llm_query_engine.sql_guard import validate_sql, UnsafeSQLError
 
 def test_valid_select_statements():
     assert validate_sql("SELECT * FROM measurements;") == "SELECT * FROM measurements;"
