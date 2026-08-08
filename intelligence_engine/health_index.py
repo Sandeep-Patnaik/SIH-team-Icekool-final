@@ -96,6 +96,44 @@ REQUIRED_MEASUREMENT_FIELDS: tuple[str, ...] = (
 )
 
 
+def _fetch_measurements(repository: "ProfileRepository", profiles: list) -> list:
+    """Fetch measurements for a batch of profiles, batching the DB round trip.
+
+    Prefers the repository's ``get_measurements_for_profiles()`` bulk method
+    (one query for every profile in ``profiles``) when the repository exposes
+    it -- this is what turns a region-wide read from N+1 queries into a
+    single one. Falls back to calling ``get_measurements_for_profile()`` once
+    per profile for duck-typed repositories (test doubles, demo stubs) that
+    only implement the older single-profile method, so nothing that depended
+    on the original contract breaks.
+
+    Shared by health_index.py and anomaly_detector.py, which otherwise
+    duplicate the same "fetch every profile's measurements for a region"
+    step.
+
+    Args:
+        repository: A ProfileRepository or duck-typed equivalent.
+        profiles: Profile dicts/objects as returned by get_profiles_by_region().
+
+    Returns:
+        The concatenated measurement dicts for every profile, in the same
+        profile order as ``profiles``.
+    """
+    profile_ids = [p["id"] if isinstance(p, dict) else p.id for p in profiles]
+
+    if hasattr(repository, "get_measurements_for_profiles"):
+        grouped = repository.get_measurements_for_profiles(profile_ids)
+        measurements = []
+        for profile_id in profile_ids:
+            measurements.extend(grouped.get(profile_id, []))
+        return measurements
+
+    measurements = []
+    for profile_id in profile_ids:
+        measurements.extend(repository.get_measurements_for_profile(profile_id))
+    return measurements
+
+
 class OceanHealthCalculator:
     """Computes a region/period Ocean Health Index per the fixed weighted formula."""
 
@@ -138,18 +176,13 @@ class OceanHealthCalculator:
             )
             raise HealthIndexError(f"Could not fetch profiles for {region}") from exc
 
-        measurements: list[dict[str, Any]] = []
-        for profile in profiles:
-            profile_id = profile["id"] if isinstance(profile, dict) else profile.id
-            try:
-                measurements.extend(self._repository.get_measurements_for_profile(profile_id))
-            except Exception as exc:
-                logger.error(
-                    "Failed to fetch measurements for profile_id=%s", profile_id, exc_info=True,
-                )
-                raise HealthIndexError(
-                    f"Could not fetch measurements for profile {profile_id}"
-                ) from exc
+        try:
+            measurements = _fetch_measurements(self._repository, profiles)
+        except Exception as exc:
+            logger.error(
+                "Failed to fetch measurements for region=%s", region, exc_info=True,
+            )
+            raise HealthIndexError(f"Could not fetch measurements for {region}") from exc
 
         if not measurements:
             logger.info(

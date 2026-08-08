@@ -328,8 +328,28 @@ class VectorIndexBuilder:
                 logger.error("get_profiles_by_region(%s) failed", region, exc_info=True)
                 raise IndexBuilderError(f"Failed to read profiles for region '{region}'.") from exc
 
+            # Batch the measurement fetch for the whole region in one call
+            # when the repository exposes the bulk API, instead of one
+            # get_measurements_for_profile() round trip per profile -- across
+            # the full archive (every region, every profile) the per-profile
+            # version is the difference between one query per region and
+            # thousands of individual queries.
+            region_profiles = [dict(p) for p in region_profiles]
+            profile_ids = [p.get("id") for p in region_profiles if p.get("id") is not None]
+            measurements_by_profile: dict[Any, list[dict]] = {}
+            if profile_ids and hasattr(repo, "get_measurements_for_profiles"):
+                try:
+                    measurements_by_profile = repo.get_measurements_for_profiles(profile_ids)
+                except Exception as exc:
+                    logger.error(
+                        "get_measurements_for_profiles(%s) failed for region=%s",
+                        profile_ids, region, exc_info=True,
+                    )
+                    raise IndexBuilderError(
+                        f"Failed to read measurements for region '{region}'."
+                    ) from exc
+
             for profile in region_profiles:
-                profile = dict(profile)
                 profile_pk = profile.get("id")
                 if profile_pk is None:
                     logger.warning(
@@ -338,7 +358,11 @@ class VectorIndexBuilder:
                         region,
                     )
                     profile["measurements"] = []
+                elif profile_ids and hasattr(repo, "get_measurements_for_profiles"):
+                    profile["measurements"] = measurements_by_profile.get(profile_pk, [])
                 else:
+                    # Duck-typed repository without the bulk method (e.g. a
+                    # test double): fall back to the original per-profile call.
                     try:
                         profile["measurements"] = repo.get_measurements_for_profile(profile_pk)
                     except Exception as exc:

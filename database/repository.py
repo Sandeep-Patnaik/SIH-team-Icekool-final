@@ -242,6 +242,57 @@ class ProfileRepository:
             )
             return []
 
+    def get_measurements_for_profiles(self, profile_ids: list[int]) -> dict[int, list[dict]]:
+        """Return depth-level measurements for many profiles in one round trip.
+
+        Equivalent to calling ``get_measurements_for_profile()`` once per id,
+        but issues a single ``WHERE profile_id IN (...)`` query (chunked to
+        stay well under SQLite's default 999-parameter limit) instead of one
+        query per profile. Callers that fetch a whole region -- the map view,
+        the health index, anomaly detection, report generation -- previously
+        opened one session and ran one SELECT per profile returned by
+        get_profiles_by_region(), which is what made those views slow on
+        anything but a handful of profiles. This method is purely additive;
+        get_measurements_for_profile() is unchanged for callers that only
+        ever need one profile at a time.
+
+        Args:
+            profile_ids: the profiles.id values to fetch measurements for.
+
+        Returns:
+            Mapping of profile_id -> list of measurement dicts (shallowest
+            first). Profile ids with no measurements are simply absent from
+            the mapping. Empty dict if profile_ids is empty or on error.
+        """
+        if not profile_ids:
+            return {}
+
+        # Chunk defensively: SQLite (used in tests/local dev) caps bound
+        # parameters at 999 by default; Postgres has no such limit but a
+        # very large single IN(...) list is still worth splitting up.
+        chunk_size = 500
+        grouped: dict[int, list[dict]] = {}
+        try:
+            with session_scope() as session:
+                for start in range(0, len(profile_ids), chunk_size):
+                    chunk = profile_ids[start : start + chunk_size]
+                    stmt = (
+                        select(Measurement)
+                        .where(Measurement.profile_id.in_(chunk))
+                        .order_by(Measurement.profile_id.asc(), Measurement.depth_m.asc())
+                    )
+                    rows = session.execute(stmt).scalars().all()
+                    for m in rows:
+                        grouped.setdefault(m.profile_id, []).append(_helpers.measurement_to_dict(m))
+        except SQLAlchemyError:
+            logger.error(
+                "get_measurements_for_profiles failed for %d profile id(s)",
+                len(profile_ids),
+                exc_info=True,
+            )
+            return {}
+        return grouped
+
     def run_raw_query(self, sql: str, params: dict | None = None) -> list[dict]:
         """Execute a read-only, parameterized SELECT and return plain dicts.
 

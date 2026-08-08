@@ -464,6 +464,7 @@ def get_report_generator() -> ReportGenerator:
     return ReportGenerator()
 
 
+@st.cache_data(show_spinner="Computing Ocean Health Index...", ttl=600)
 def compute_health(
     profiles: pd.DataFrame,
     *,
@@ -472,6 +473,16 @@ def compute_health(
     end_date: Optional[date] = None,
 ) -> HealthView:
     """Run the health calculation and adapt its response.
+
+    Cached by (region, start_date, end_date, profiles content) per the
+    caching rule in dashboard/README.md ("Query results, computed
+    DataFrames, health scores -> @st.cache_data"): without this, every
+    interaction anywhere on the Ocean Health tab -- a toggle, an unrelated
+    widget, even switching workspaces and back -- reran the full backend
+    computation from scratch, including a live LLM call per region for the
+    recommendation text when an LLM API key is configured. That combination
+    (uncached + LLM round trip on every rerun) was the single biggest
+    contributor to the tab feeling slow.
 
     Args:
         profiles: Observations to assess.
