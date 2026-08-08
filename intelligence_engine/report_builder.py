@@ -120,15 +120,16 @@ class ReportBuilder:
             raise ReportBuildError(f"Could not render PDF report for {region}") from exc
 
         try:
+            # ProfileRepository.insert_report()'s locked signature takes these
+            # as individual keyword arguments (region, period_start, period_end,
+            # file_path, summary_text) and sets generated_at itself -- it does
+            # not accept a single report dict.
             self._repository.insert_report(
-                {
-                    "generated_at": datetime.now(),
-                    "ocean_region": region,
-                    "period_start": start,
-                    "period_end": end,
-                    "file_path": str(relative_path),
-                    "summary_text": summary_text,
-                }
+                region=region,
+                period_start=start,
+                period_end=end,
+                file_path=str(relative_path),
+                summary_text=summary_text,
             )
         except Exception as exc:
             logger.error(

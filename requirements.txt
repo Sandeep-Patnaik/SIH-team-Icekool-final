@@ -50,3 +50,12 @@ pytest>=8.0
 # Optional (already used by pytest)
 # ==========================
 anyio
+
+streamlit>=1.36
+plotly>=5.22
+folium>=0.17
+streamlit-folium>=0.22
+pandas>=2.2
+xarray>=2024.6.0
+netCDF4>=1.6
+pytest>=8.2

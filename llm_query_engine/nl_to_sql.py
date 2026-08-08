@@ -1,7 +1,7 @@
 import logging
 from typing import List, Dict, Any, Optional
-from mcp_client import MCPClient
-from prompt_templates import OCEANMIND_SYSTEM_PROMPT, build_nl_to_sql_prompt
+from llm_query_engine.mcp_client import MCPClient
+from llm_query_engine.prompt_templates import OCEANMIND_SYSTEM_PROMPT, build_nl_to_sql_prompt
 
 logger = logging.getLogger("ocean_mind.nl_to_sql")
 logger.setLevel(logging.INFO)

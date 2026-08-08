@@ -3,9 +3,9 @@ import logging
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
-from mcp_client import MCPClient
-from nl_to_sql import NLToSQLTranslator
-from sql_guard import validate_sql, UnsafeSQLError
+from llm_query_engine.mcp_client import MCPClient
+from llm_query_engine.nl_to_sql import NLToSQLTranslator
+from llm_query_engine.sql_guard import validate_sql, UnsafeSQLError
 
 logger = logging.getLogger("ocean_mind.query_engine")
 logger.setLevel(logging.INFO)
