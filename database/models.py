@@ -12,7 +12,6 @@ from sqlalchemy import Date
 from sqlalchemy import DateTime
 from sqlalchemy import Float as SAFloat
 from sqlalchemy import ForeignKey
-from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import SmallInteger
 from sqlalchemy import String
@@ -54,14 +53,6 @@ class Profile(Base):
     __tablename__ = "profiles"
     __table_args__ = (
         UniqueConstraint("float_id", "cycle_number", name="ux_profiles_float_cycle"),
-        # Mirrors database/schema.sql's ix_profiles_region_date exactly. Without
-        # this, Base.metadata.create_all() (used by database/session.py's
-        # __main__ self-test, database/repository.py's __main__ self-test, and
-        # any local/CI setup that skips Alembic) silently produces a database
-        # with no index backing the region+date filter every dashboard page
-        # load runs -- a full table scan on profiles as the table grows, even
-        # though the "real" schema (schema.sql / the Alembic migration) has it.
-        Index("ix_profiles_region_date", "ocean_region", "profile_date"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -87,13 +78,7 @@ class Measurement(Base):
     __tablename__ = "measurements"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    # index=True mirrors database/schema.sql's ix_measurements_profile_id.
-    # Postgres does NOT auto-index foreign key columns, so without this every
-    # get_measurements_for_profile[s]() call -- run once per profile on every
-    # map/health/report view -- was a full table scan on measurements. See the
-    # ix_profiles_region_date comment above for why this can silently drift
-    # from schema.sql/the Alembic migration if only declared there.
-    profile_id = Column(Integer, ForeignKey("profiles.id"), index=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"))
     pressure_dbar = Column(SAFloat)
     depth_m = Column(SAFloat)
     temperature_c = Column(SAFloat)

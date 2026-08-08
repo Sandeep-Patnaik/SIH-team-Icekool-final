@@ -382,31 +382,72 @@ _GLOBAL_CSS: Final[str] = f"""
     50% {{ filter: drop-shadow(0 0 16px rgba(34,211,238,.65)); }}
   }}
 
-  /* ----- Top navigation bar (the workspace switcher radio) ----- */
-  div[data-testid="stRadio"] > div[role="radiogroup"] {{
-    gap: .5rem; flex-wrap: wrap; margin-bottom: .2rem;
-  }}
-  div[data-testid="stRadio"] div[role="radiogroup"] label {{
-    background: {OCEAN["bg_card"]};
+  /* ----- Top navigation bar (four big-icon workspace buttons) ----- */
+  .om-topnav {{ margin-bottom: 1.1rem; }}
+  .om-topnav [data-testid="stHorizontalBlock"] {{ gap: .75rem; }}
+
+  .om-topnav [data-testid="stButton"] button {{
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: .3rem;
+    background: linear-gradient(160deg, {OCEAN["bg_card"]} 0%, {OCEAN["bg_panel"]} 100%);
     border: 1px solid {OCEAN["border"]};
-    border-radius: 10px;
-    padding: .5rem 1.15rem;
-    font-weight: 580;
+    border-radius: 16px;
+    padding: 1.1rem .6rem .9rem;
+    min-height: 92px;
     color: {OCEAN["text_muted"]};
-    transition: all .16s ease;
-    cursor: pointer;
+    font-weight: 640;
+    font-size: .88rem;
+    letter-spacing: -.005em;
+    box-shadow: 0 1px 0 rgba(255,255,255,.02) inset, 0 6px 14px -10px rgba(0,0,0,.6);
+    transition: transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .18s ease,
+                border-color .18s ease, color .18s ease, background .18s ease;
   }}
-  div[data-testid="stRadio"] div[role="radiogroup"] label:hover {{
+  .om-topnav [data-testid="stIconMaterial"] {{
+    font-size: 2.35rem !important;
+    width: 2.35rem !important; height: 2.35rem !important;
+    transition: transform .18s cubic-bezier(.2,.8,.2,1), filter .18s ease;
+  }}
+
+  /* Inactive (secondary) tabs */
+  .om-topnav [data-testid="stButton"] button[kind="secondary"]:hover {{
+    transform: translateY(-4px) scale(1.03);
     border-color: {OCEAN["border_strong"]};
     color: {OCEAN["text_secondary"]};
+    box-shadow: 0 14px 28px -14px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.03) inset;
   }}
-  div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {{
-    background: {OCEAN["bg_card_hover"]};
+  .om-topnav [data-testid="stButton"] button[kind="secondary"]:hover [data-testid="stIconMaterial"] {{
+    transform: translateY(-1px) scale(1.08);
+    filter: drop-shadow(0 4px 8px rgba(34,211,238,.25));
+  }}
+  .om-topnav [data-testid="stButton"] button[kind="secondary"]:active {{
+    transform: translateY(-1px) scale(.98);
+  }}
+
+  /* Active (primary) tab: lifted "3D" card with a glowing icon */
+  .om-topnav [data-testid="stButton"] button[kind="primary"] {{
+    background: linear-gradient(165deg, {OCEAN["bg_card_hover"]} 0%, {OCEAN["bg_card"]} 100%);
     border-color: {OCEAN["accent"]};
-    color: {OCEAN["accent"]};
+    color: {OCEAN["text_primary"]};
+    transform: translateY(-5px);
+    box-shadow: 0 16px 30px -14px rgba(34,211,238,.35), 0 0 0 1px rgba(34,211,238,.25) inset;
   }}
-  div[data-testid="stRadio"] div[role="radiogroup"] label > div:first-child {{
-    display: none; /* hide the native radio dot; the pill itself shows state */
+  .om-topnav [data-testid="stButton"] button[kind="primary"] [data-testid="stIconMaterial"] {{
+    color: {OCEAN["accent"]};
+    filter: drop-shadow(0 0 12px rgba(34,211,238,.55));
+    animation: om-nav-float 2.6s ease-in-out infinite;
+  }}
+  .om-topnav [data-testid="stButton"] button[kind="primary"]:hover {{
+    transform: translateY(-6px) scale(1.02);
+  }}
+
+  @keyframes om-nav-float {{
+    0%, 100% {{ transform: translateY(0); }}
+    50% {{ transform: translateY(-3px); }}
+  }}
+
+  @media (max-width: 640px) {{
+    .om-topnav [data-testid="stIconMaterial"] {{ font-size: 1.7rem !important; width: 1.7rem !important; height: 1.7rem !important; }}
+    .om-topnav [data-testid="stButton"] button {{ min-height: 72px; font-size: .74rem; padding: .8rem .3rem .65rem; }}
   }}
 
   /* ----- Soften Streamlit's rerun dim so filter changes feel snappier ----- */
@@ -590,6 +631,104 @@ def pill(text: str, tone: Tone = "accent") -> str:
     """
     modifier = "" if tone in {"accent", "neutral"} else f" om-pill--{tone}"
     return f'<span class="om-pill{modifier}">{text}</span>'
+
+
+def render_ambient_strip(height: int = 64) -> None:
+    """Render a small live, animated wave/particle strip beneath the top nav.
+
+    This is deliberately built with raw HTML/CSS/JS rendered inside an
+    iframe rather than Streamlit widgets: it runs in its own sandboxed
+    document, purely for visual flair. It has no access to Streamlit's
+    session state and cannot call back into the app -- it can only draw
+    pixels. If the browser ever fails to render it, nothing else on the
+    page is affected.
+
+    Uses ``st.iframe`` when available (Streamlit's current API for embedding
+    HTML/JS) and falls back to the older ``st.components.v1.html`` on
+    Streamlit versions that predate it.
+
+    Args:
+        height: Height of the strip in pixels.
+    """
+    markup = f"""
+    <div style="position:relative;width:100%;height:{height}px;
+                overflow:hidden;border-radius:14px;
+                border:1px solid {OCEAN["border"]};
+                background:linear-gradient(90deg, {OCEAN["bg_panel"]}, {OCEAN["bg_card"]});">
+      <canvas id="om-wave" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>
+    </div>
+    <style>html, body {{ background: transparent; margin: 0; }}</style>
+    <script>
+    (function () {{
+      const canvas = document.getElementById("om-wave");
+      const ctx = canvas.getContext("2d");
+
+      function size() {{
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = canvas.clientWidth * ratio;
+        canvas.height = canvas.clientHeight * ratio;
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      }}
+      size();
+      window.addEventListener("resize", size);
+
+      const bubbles = Array.from({{length: 22}}, () => ({{
+        x: Math.random() * canvas.clientWidth,
+        y: Math.random() * canvas.clientHeight,
+        r: 1 + Math.random() * 2.2,
+        speed: 0.15 + Math.random() * 0.35,
+        drift: (Math.random() - 0.5) * 0.3,
+        phase: Math.random() * Math.PI * 2,
+      }}));
+
+      const waves = [
+        {{colour: "rgba(34,211,238,0.20)", amp: 7, speed: 1.0, base: 0.60}},
+        {{colour: "rgba(59,130,246,0.16)", amp: 10, speed: 0.65, base: 0.78}},
+      ];
+
+      let t = 0;
+      function frame() {{
+        t += 0.016;
+        const w = canvas.clientWidth, h = canvas.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        waves.forEach(function (wave) {{
+          ctx.beginPath();
+          ctx.moveTo(0, h);
+          for (let x = 0; x <= w; x += 6) {{
+            const y = h * wave.base + Math.sin(x * 0.025 + t * wave.speed) * wave.amp;
+            ctx.lineTo(x, y);
+          }}
+          ctx.lineTo(w, h);
+          ctx.closePath();
+          ctx.fillStyle = wave.colour;
+          ctx.fill();
+        }});
+
+        bubbles.forEach(function (p) {{
+          p.y -= p.speed;
+          p.x += Math.sin(t + p.phase) * p.drift;
+          if (p.y < -4) {{ p.y = h + 4; p.x = Math.random() * w; }}
+          const glow = 0.15 + 0.25 * Math.pow(Math.sin(t + p.phase), 2);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(232,241,250," + glow + ")";
+          ctx.fill();
+        }});
+
+        requestAnimationFrame(frame);
+      }}
+      frame();
+    }})();
+    </script>
+    """
+
+    if hasattr(st, "iframe"):
+        st.iframe(markup, height=height)
+    else:  # pragma: no cover - older Streamlit versions
+        import streamlit.components.v1 as components
+
+        components.html(markup, height=height)
 
 
 # Register on import so any module building figures inherits the theme, even

@@ -464,9 +464,9 @@ def get_report_generator() -> ReportGenerator:
     return ReportGenerator()
 
 
-@st.cache_data(show_spinner="Computing Ocean Health Index...", ttl=600)
+@st.cache_data(show_spinner="Computing ocean health index...", ttl=600)
 def compute_health(
-    profiles: pd.DataFrame,
+    _profiles: pd.DataFrame,
     *,
     region: Optional[str] = None,
     start_date: Optional[date] = None,
@@ -474,18 +474,20 @@ def compute_health(
 ) -> HealthView:
     """Run the health calculation and adapt its response.
 
-    Cached by (region, start_date, end_date, profiles content) per the
-    caching rule in dashboard/README.md ("Query results, computed
-    DataFrames, health scores -> @st.cache_data"): without this, every
-    interaction anywhere on the Ocean Health tab -- a toggle, an unrelated
-    widget, even switching workspaces and back -- reran the full backend
-    computation from scratch, including a live LLM call per region for the
-    recommendation text when an LLM API key is configured. That combination
-    (uncached + LLM round trip on every rerun) was the single biggest
-    contributor to the tab feeling slow.
+    Cached on ``(region, start_date, end_date)`` -- the leading underscore on
+    ``_profiles`` tells Streamlit not to hash that argument, since
+    ``OceanHealthCalculator.compute()`` fetches its own data from the
+    repository and never actually reads it (see the class docstring above).
+
+    Without this cache, every rerun of the Ocean Health/Reports pages
+    recomputed the score from scratch: for a multi-region key like "Indian
+    Ocean" that means one backend call *per underlying region*, each doing
+    its own DB-bound aggregation over the full date range -- tens of seconds
+    per region, repeated on every single widget interaction.
 
     Args:
-        profiles: Observations to assess.
+        _profiles: Observations to assess (unused by the real calculator;
+            present only to preserve the call signature).
         region: Region the assessment covers.
         start_date: Inclusive lower date bound.
         end_date: Inclusive upper date bound.
@@ -496,7 +498,7 @@ def compute_health(
     """
     try:
         raw = get_health_calculator().compute(
-            profiles=profiles, region=region, start_date=start_date, end_date=end_date
+            profiles=_profiles, region=region, start_date=start_date, end_date=end_date
         )
     except Exception as exc:  # noqa: BLE001 - surface backend failures in the UI
         logger.exception("OceanHealthCalculator.compute failed")

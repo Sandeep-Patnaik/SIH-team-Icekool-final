@@ -10,7 +10,6 @@ Profiles are read through the existing repository interface:
 
 * ``ProfileRepository.get_profiles_by_region()``
 * ``ProfileRepository.get_profiles_near()``
-* ``ProfileRepository.get_measurements_for_profiles()`` (batched fetch)
 
 When the backend cannot be imported, a signature-identical stub serves
 synthetic profiles so the view still renders in demo mode.
@@ -77,6 +76,7 @@ try:
         profile_rows: List[Dict[str, Any]],
         *,
         distance_col: bool = False,
+        limit: Optional[int] = None,
     ) -> pd.DataFrame:
         """Flatten profile + measurement rows into the dashboard's wide table.
 
@@ -85,27 +85,28 @@ try:
         latitude, longitude, id, ...). The dashboard needs one row per
         *depth-level observation* (with temperature/salinity/oxygen/etc.), so
         this joins each profile against
-        ``ProfileRepository.get_measurements_for_profiles()`` (batched, one
-        query for the whole page instead of one per profile) and renames the
+        ``ProfileRepository.get_measurements_for_profile()`` and renames the
         backend's measurement columns to the names every dashboard module
         (utils.VARIABLES, map_view, profile_plots) expects.
-        """
-        # Batch the measurement fetch: one WHERE profile_id IN (...) query for
-        # every profile in profile_rows instead of one query per profile. With
-        # a few hundred profiles in view (a normal region/date selection),
-        # this is what turned "every filter change reloads the map" from
-        # several seconds into a single round trip.
-        profile_ids = [p.get("id") for p in profile_rows if p.get("id") is not None]
-        try:
-            measurements_by_profile = repository.get_measurements_for_profiles(profile_ids)
-        except Exception:  # noqa: BLE001 - one bad batch shouldn't blank the page
-            logger.exception("get_measurements_for_profiles failed for %d profile id(s)", len(profile_ids))
-            measurements_by_profile = {}
 
+        ``get_measurements_for_profile()`` is one DB round-trip *per profile*,
+        and a single profile can carry thousands of depth-level readings, so
+        stop issuing further calls as soon as ``limit`` rows are in hand
+        rather than fetching every profile's full measurement set and
+        truncating afterwards -- that previously turned a wide date range
+        into hundreds of full-size queries before a single row reached the
+        page.
+        """
         records: List[Dict[str, Any]] = []
         for profile in profile_rows:
+            if limit is not None and len(records) >= limit:
+                break
             profile_id = profile.get("id")
-            measurements = measurements_by_profile.get(profile_id, []) if profile_id is not None else []
+            try:
+                measurements = repository.get_measurements_for_profile(profile_id) if profile_id is not None else []
+            except Exception:  # noqa: BLE001 - one bad profile shouldn't blank the page
+                logger.exception("get_measurements_for_profile failed for profile_id=%s", profile_id)
+                measurements = []
 
             base: Dict[str, Any] = {
                 "float_id": profile.get("float_id"),
@@ -178,7 +179,10 @@ try:
             end = end_date or date.today()
 
             frames: List[pd.DataFrame] = []
+            remaining = limit
             for backend_region in backend_regions_for(region):
+                if remaining is not None and remaining <= 0:
+                    break
                 try:
                     profiles = self._backend.get_profiles_by_region(backend_region, start, end)
                 except Exception:  # noqa: BLE001 - surface backend failures as empty state
@@ -187,7 +191,10 @@ try:
                     )
                     continue
                 if profiles:
-                    frames.append(_profile_rows_to_frame(self._backend, profiles))
+                    piece = _profile_rows_to_frame(self._backend, profiles, limit=remaining)
+                    frames.append(piece)
+                    if remaining is not None:
+                        remaining -= len(piece)
 
             if not frames:
                 return pd.DataFrame()
@@ -220,7 +227,7 @@ try:
                 logger.exception("ProfileRepository.get_profiles_near failed")
                 return pd.DataFrame()
 
-            frame = _profile_rows_to_frame(self._backend, profiles, distance_col=True)
+            frame = _profile_rows_to_frame(self._backend, profiles, distance_col=True, limit=limit)
             if limit is not None:
                 frame = frame.head(int(limit))
             return frame
@@ -297,17 +304,13 @@ except Exception:  # noqa: BLE001 - covers ImportError *and* a misconfigured
             return frame.reset_index(drop=True)
 
 
-@st.cache_data(show_spinner=False, ttl=600)
 def available_date_bounds() -> Optional[Tuple[date, date]]:
     """Return the real ``(earliest, latest)`` profile_date in the database.
 
     Used to size the sidebar's date picker to the data that's actually
     present (e.g. archival ARGO floats from the early 2000s), instead of
     Streamlit's ``st.date_input`` default of "10 years before the current
-    value", which silently hides anything older. Cached for 10 minutes
-    (matching load_profiles()'s ttl) since this runs on every sidebar
-    render -- i.e. every single interaction anywhere in the app -- and would
-    otherwise issue a fresh MIN/MAX query on each one.
+    value", which silently hides anything older.
 
     Returns:
         ``(min_date, max_date)``, or ``None`` in demo mode / on any query

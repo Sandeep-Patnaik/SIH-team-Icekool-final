@@ -34,6 +34,7 @@ from dashboard.styles import (  # noqa: E402
     apply_theme,
     logo_svg_markup,
     pill,
+    render_ambient_strip,
     render_hero,
     render_kpi_row,
     section_header,
@@ -65,6 +66,13 @@ PAGES: Final[Dict[str, str]] = {
     "Ocean Health": ":material/waves:",
     "Reports": ":material/description:",
 }
+
+#: Observation rows fetched per page load. The backend join is one DB call
+#: per *profile* (see ``map_view._profile_rows_to_frame``), so this caps how
+#: many of those calls a single wide filter can trigger -- without it, a
+#: broad date range across "Indian Ocean" could walk hundreds of profiles
+#: before the page renders anything.
+DEFAULT_QUERY_LIMIT: Final[int] = 20_000
 
 
 # --------------------------------------------------------------------------- #
@@ -195,24 +203,37 @@ def render_sidebar() -> None:
 
 
 def render_topnav() -> str:
-    """Render the four workspaces as a top navigation bar.
+    """Render the four workspaces as a big-icon top navigation bar.
 
-    Deliberately a styled ``st.radio`` rather than ``st.tabs``: Streamlit
+    Deliberately four ``st.button`` widgets rather than ``st.tabs``: Streamlit
     executes the body of every ``st.tabs`` block on each rerun regardless of
     which tab is visible, which would mean loading the map, chat engine and
-    health/report panels on every single interaction. A radio only ever
-    triggers the branch the caller chooses to run.
+    health/report panels on every single interaction. A button only ever
+    triggers the branch the caller chooses to run on the *next* rerun, and
+    each carries a real ``:material/...:`` icon (rendered as scalable font
+    glyphs, sized up via CSS) rather than emoji baked into plain text.
 
     Returns:
         The name of the selected workspace.
     """
-    return st.radio(
-        "Navigation",
-        options=list(PAGES),
-        horizontal=True,
-        label_visibility="collapsed",
-        key="om_page",
-    )
+    active = st.session_state.setdefault("om_page", next(iter(PAGES)))
+
+    st.markdown('<div class="om-topnav">', unsafe_allow_html=True)
+    columns = st.columns(len(PAGES), gap="small")
+    for column, (name, icon) in zip(columns, PAGES.items()):
+        with column:
+            if st.button(
+                name,
+                icon=icon,
+                key=f"om_nav_{name}",
+                width="stretch",
+                type="primary" if name == active else "secondary",
+            ):
+                st.session_state["om_page"] = name
+                st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    return st.session_state["om_page"]
 
 
 # --------------------------------------------------------------------------- #
@@ -233,6 +254,7 @@ def load_filtered_profiles(filters: Dict[str, Any]) -> pd.DataFrame:
         region=filters["region"],
         start_date=filters["date_start"],
         end_date=filters["date_end"],
+        limit=DEFAULT_QUERY_LIMIT,
     )
     return filter_profiles(
         frame,
@@ -438,6 +460,7 @@ def main() -> None:
 
     render_sidebar()
     page = render_topnav()
+    render_ambient_strip()
     filters = st.session_state[SESSION_FILTERS]
 
     frame = load_filtered_profiles(filters)
@@ -449,6 +472,12 @@ def main() -> None:
             icon=":material/filter_alt_off:",
         )
         return
+
+    if len(frame) >= DEFAULT_QUERY_LIMIT:
+        st.caption(
+            f"Showing the first {DEFAULT_QUERY_LIMIT:,} observations for this filter -- "
+            "narrow the date range or region for the complete set."
+        )
 
     if page == "Explore Ocean":
         page_explore(frame, filters)

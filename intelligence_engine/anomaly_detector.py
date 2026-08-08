@@ -26,7 +26,6 @@ from intelligence_engine.health_index import (
     BASELINE_TEMPERATURE_C,
     BASELINE_SALINITY_PSU,
     OXYGEN_HEALTHY_RANGE,
-    _fetch_measurements,
 )
 
 if TYPE_CHECKING:
@@ -82,13 +81,18 @@ class AnomalyDetector:
             )
             raise AnomalyDetectionError(f"Could not fetch profiles for {region}") from exc
 
-        try:
-            measurements = _fetch_measurements(self._repository, profiles)
-        except Exception as exc:
-            logger.error(
-                "Failed to fetch measurements for region=%s", region, exc_info=True,
-            )
-            raise AnomalyDetectionError(f"Could not fetch measurements for {region}") from exc
+        measurements: list[dict[str, Any]] = []
+        for profile in profiles:
+            profile_id = profile["id"] if isinstance(profile, dict) else profile.id
+            try:
+                measurements.extend(self._repository.get_measurements_for_profile(profile_id))
+            except Exception as exc:
+                logger.error(
+                    "Failed to fetch measurements for profile_id=%s", profile_id, exc_info=True,
+                )
+                raise AnomalyDetectionError(
+                    f"Could not fetch measurements for profile {profile_id}"
+                ) from exc
 
         if not measurements:
             logger.info("No measurements available for %s; reporting no anomalies", region)
